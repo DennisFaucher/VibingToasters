@@ -1,0 +1,11 @@
+# Build products
+.build/
+.swiftpm/
+FlyingToasters.saver/
+
+# Compiled Metal artefacts
+*.air
+*.metallib
+
+# macOS
+.DS_Store
