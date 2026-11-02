@@ -1,0 +1,38 @@
+NOTICE
+
+This repository is released under the MIT license (see LICENSE), with one
+limitation: that license applies to the source code only.
+
+Excluded from the MIT grant
+---------------------------
+
+The following files contain or depict third-party artwork that is not owned by
+this project's author, and is therefore NOT covered by the MIT license:
+
+  * Sources/FlyingToastersKit/ToasterFrames.swift
+  * docs/screenshot.png
+
+The first is the six-frame toaster animation baked into packed 4-bit palette
+data. The second is a screenshot of the running program and therefore depicts
+the same artwork.
+
+Provenance
+----------
+
+The toaster sprites are from *After Dark*'s Flying Toasters screensaver,
+copyright Berkeley Systems (1992). The frames used here were extracted by the
+project at https://github.com/torunar/flying-toasters-xscreensaver, which is
+MIT licensed. That project's MIT license covers its own code; it does not
+confer any rights to the extracted artwork, which that project also did not own.
+
+What this means in practice
+---------------------------
+
+You may fork, modify, build, and redistribute the code under the terms of the
+MIT license. The artwork carries no such permission and remains the property of
+its rights holder. Nothing here claims otherwise, and this project is not
+affiliated with or endorsed by Berkeley Systems.
+
+If you intend to distribute this program, or a fork of it, with the toaster
+sprites included, you are responsible for determining whether you have the
+right to do so. Building for personal use is not the same as publishing.

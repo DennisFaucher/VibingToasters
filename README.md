@@ -106,3 +106,12 @@ artwork originates from that screensaver and was extracted by the
 [torunar/flying-toasters-xscreensaver](https://github.com/torunar/flying-toasters-xscreensaver)
 project, which is MIT licensed. The artwork itself belongs to Berkeley Systems; this project
 is a personal reimplementation and is not affiliated with or endorsed by them.
+
+## License
+
+The **code** is [MIT licensed](LICENSE) — fork it, change it, ship it.
+
+The **toaster sprite artwork is not covered by that license**, and this project has no
+rights to grant over it. That applies to `Sources/FlyingToastersKit/ToasterFrames.swift` and
+to `docs/screenshot.png`, which depicts the same artwork. See [NOTICE](NOTICE) for the
+details, including why the upstream MIT license doesn't carry over to the images.

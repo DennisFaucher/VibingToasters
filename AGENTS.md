@@ -37,6 +37,8 @@ precompiled `metallib` lives in `Contents/Resources` and is loaded directly (not
 | File | Purpose |
 | --- | --- |
 | `Package.swift` | SPM manifest: kit library, app executable, saver dylib |
+| `LICENSE` | MIT, covering the code only — not the sprite artwork |
+| `NOTICE` | Scope carve-out: which files carry third-party artwork and why |
 | `Sources/FlyingToastersKit/ShaderSource.swift` | Metal shader as a Swift string |
 | `Sources/FlyingToastersKit/Scene.swift` | Wire format, `Kind`, `Flight`, toasts/toasters/stars |
 | `Sources/FlyingToastersKit/Renderer.swift` | `FlyingToastersRenderer`, pipeline, instancing |
