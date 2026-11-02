@@ -32,12 +32,14 @@ public final class FlyingToastersSaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
-        metalView?.isPaused = false
+        Diagnostics.log("saver: startAnimation window=\(window != nil) bounds=\(bounds.size)")
+        metalView?.startAnimating()
     }
 
     public override func stopAnimation() {
         super.stopAnimation()
-        metalView?.isPaused = true
+        Diagnostics.log("saver: stopAnimation")
+        metalView?.stopAnimating()
     }
 
     /// MTKView draws itself; the host only needs to clear behind it.
@@ -75,7 +77,13 @@ public final class FlyingToastersSaverView: ScreenSaverView {
         view.delegate = renderer
         view.autoresizingMask = [.width, .height]
         addSubview(view)
-        Diagnostics.log("saver: metal view added with frame \(view.frame)")
+
+        // Identity of this instance, so a multi-display run can be told apart.
+        let screenInfo = window?.screen.map {
+            "screen=\($0.frame.size) scale=\($0.backingScaleFactor)"
+        } ?? "screen=nil"
+        Diagnostics.log("saver: metal view added frame=\(view.frame) "
+                        + "inWindow=\(view.window != nil) \(screenInfo)")
 
         self.renderer = renderer
         self.metalView = view

@@ -19,9 +19,17 @@ public enum Diagnostics {
             .appendingPathComponent("FlyingToastersSaver.log")
     }
 
-    /// Truncates the log. Called once per instantiation so the file reflects the
-    /// current run rather than accumulating across weeks of idle time.
+    private static var didResetThisProcess = false
+
+    /// Truncates the log once per process.
+    ///
+    /// Not once per instance: the host creates one screen saver view per display,
+    /// and resetting each time would leave only the last display's history — which
+    /// is exactly the wrong thing to hide when one screen is black and another is
+    /// fine.
     public static func reset() {
+        guard !didResetThisProcess else { return }
+        didResetThisProcess = true
         try? FileManager.default.removeItem(at: logURL)
     }
 

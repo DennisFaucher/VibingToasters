@@ -274,6 +274,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewportSize = SIMD2(Float(size.width), Float(size.height))
         aspect = max(viewportSize.x, 1) / max(viewportSize.y, 1)
+        Diagnostics.log("draw: drawableSizeWillChange -> \(size)")
     }
 
     public func draw(in view: MTKView) {
@@ -326,8 +327,17 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
 
         frameCount += 1
-        if frameCount == 60 {
-            Diagnostics.log("Animation confirmed: 60 frames rendered")
+        // Heartbeat rather than a single confirmation: if frames stop arriving
+        // after the first second, that is a different bug from frames arriving
+        // that nobody can see.
+        switch frameCount {
+        case 60, 600, 1800:
+            Diagnostics.log("Animation heartbeat: \(frameCount) frames, "
+                            + "elapsed=\(String(format: "%.1f", elapsed))s, "
+                            + "window=\(view.window != nil), "
+                            + "visible=\(!view.isHidden && view.alphaValue > 0)")
+        default:
+            break
         }
     }
 
