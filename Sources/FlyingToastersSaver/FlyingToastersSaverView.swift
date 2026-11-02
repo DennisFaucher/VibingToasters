@@ -49,6 +49,9 @@ public final class FlyingToastersSaverView: ScreenSaverView {
     // MARK: Setup
 
     private func buildScene(isPreview: Bool) {
+        Diagnostics.reset()
+        Diagnostics.log("saver: buildScene preview=\(isPreview) frame=\(frame) bounds=\(bounds)")
+
         wantsLayer = true
 
         // Sizes are in normalised device coordinates, so the composition is the
@@ -57,9 +60,14 @@ public final class FlyingToastersSaverView: ScreenSaverView {
         // field of stars.
         let density: Float = isPreview ? 0.5 : 1.0
 
-        guard let device = MTLCreateSystemDefaultDevice(),
-              let renderer = FlyingToastersRenderer(device: device, density: density) else {
-            NSLog("[FlyingToastersSaver] Unable to initialise the Metal scene")
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            Diagnostics.log("saver: no Metal device")
+            return
+        }
+        Diagnostics.log("saver: device \(device.name)")
+
+        guard let renderer = FlyingToastersRenderer(device: device, density: density) else {
+            Diagnostics.log("saver: renderer init failed")
             return
         }
 
@@ -67,6 +75,7 @@ public final class FlyingToastersSaverView: ScreenSaverView {
         view.delegate = renderer
         view.autoresizingMask = [.width, .height]
         addSubview(view)
+        Diagnostics.log("saver: metal view added with frame \(view.frame)")
 
         self.renderer = renderer
         self.metalView = view

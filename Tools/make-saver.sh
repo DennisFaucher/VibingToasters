@@ -9,9 +9,11 @@
 # Contents/Resources holds the precompiled Metal library. macOS loads it as a
 # plugin inside legacyScreenSaver.appex.
 #
-# The shader is also compiled here rather than only at runtime, because the
-# sandboxed legacyScreenSaver host may not reach MTLCompilerService. The renderer
-# tries the inline source first and falls back to this metallib.
+# The metallib is not optional. legacyScreenSaver is sandboxed and its Mach lookup
+# exceptions do not include MTLCompilerService, so makeLibrary(source:) cannot
+# compile there — the precompiled library is the only path that works. The
+# renderer therefore prefers the metallib and only compiles from source when none
+# is bundled (the standalone app).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

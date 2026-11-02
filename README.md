@@ -69,11 +69,15 @@ rather than bouncing.
 
 ### Why there is a `.metallib` in the bundle
 
-The shader normally compiles at runtime from an inlined Swift string. But a `.saver` is
-loaded inside Apple's sandboxed `legacyScreenSaver` host, where the XPC round-trip to
-`MTLCompilerService` isn't guaranteed. So `make-saver.sh` also compiles the shader ahead of
-time into `Contents/Resources`, and the renderer falls back to it if the runtime compile
-fails.
+The standalone app compiles its shader at runtime from an inlined Swift string. The screen
+saver cannot: `legacyScreenSaver` is sandboxed, and its Mach lookup exceptions cover
+`CARenderServer` and `CoreDisplay` but **not** `MTLCompilerService`. Runtime shader
+compilation is simply unavailable there.
+
+So `make-saver.sh` compiles the shader ahead of time into `Contents/Resources`, and the
+renderer **prefers** that library whenever one is present. Compiling from source is only a
+path for the app, which ships no metallib. Getting this order wrong is not a slow path — it
+is a black screen.
 
 ## Regenerating the sprites
 

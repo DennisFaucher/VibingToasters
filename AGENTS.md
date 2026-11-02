@@ -29,7 +29,8 @@ source is inlined as a Swift string and compiled at runtime with
 `Sources/FlyingToastersKit/ToasterFrames.swift` as packed palette data. Keep it that way:
 SPM resource bundles in an executable target are a needless source of `Bundle.module`
 failures. The one exception is the `.saver`, which is a bundle by definition — its
-precompiled `metallib` lives in `Contents/Resources` and is found with `Bundle(for:)`.
+precompiled `metallib` lives in `Contents/Resources` and is loaded directly (not via
+`Bundle(for:)`, which resolves to the *host* bundle inside the saver).
 
 ## Layout
 
@@ -41,6 +42,7 @@ precompiled `metallib` lives in `Contents/Resources` and is found with `Bundle(f
 | `Sources/FlyingToastersKit/Renderer.swift` | `FlyingToastersRenderer`, pipeline, instancing |
 | `Sources/FlyingToastersKit/ToasterView.swift` | Shared `MTKView` setup (display link pushed hard) |
 | `Sources/FlyingToastersKit/ToasterFrames.swift` | Generated. Six 64×64 toaster frames, 4 bits per pixel |
+| `Sources/FlyingToastersKit/Diagnostics.swift` | File log for the sandboxed saver, where unified logging is unreachable |
 | `Sources/FlyingToasters/main.swift` | App front end: window, key handling |
 | `Sources/FlyingToastersSaver/FlyingToastersSaverView.swift` | `ScreenSaverView` plugin |
 | `Tools/make-saver.sh` | Builds, compiles the metallib, assembles and signs the `.saver` |
@@ -166,15 +168,34 @@ screencapture -x -o -l "$WID" /tmp/saver.png
 kill %1
 ```
 
-Check the log, not just the picture. The renderer logs `Ready:` and then
-`Animation confirmed: 60 frames rendered`; a bundle that loads but never draws shows the
-first line and no second one.
+Check the log, not just the picture. **Inside the real saver the log is a file**, because
+`legacyScreenSaver`'s sandbox makes unified logging unreachable and `log show` returns
+nothing useful:
+
+```sh
+cat ~/Library/Containers/com.apple.ScreenSaver.Engine.legacyScreenSaver/Data/tmp/FlyingToastersSaver.log
+```
+
+A healthy run looks like this — note the metallib path, which is the only shader route that
+works under that sandbox:
+
+```
+saver: buildScene preview=false frame=(0.0, 0.0, 2560.0, 1080.0) bounds=(0.0, 0.0, 2560.0, 1080.0)
+saver: device Apple M4 Pro
+shader: loaded precompiled metallib at .../Contents/Resources/FlyingToastersShaders.metallib
+Ready: 240 stars, 26 toasts, 16 toasters on Apple M4 Pro
+saver: metal view added with frame (0.0, 0.0, 2560.0, 1080.0)
+draw #1: drawableSize=(2560.0, 1080.0) bounds=(2560.0, 1080.0) paused=false
+Animation confirmed: 60 frames rendered
+```
 
 Failure modes worth knowing:
 
-1. **Black screen in the real saver but not the harness** → shader compilation. The
-   sandboxed host may not reach `MTLCompilerService`. The renderer already falls back to
-   `Contents/Resources/FlyingToastersShaders.metallib`; check that file shipped.
+1. **Black screen in the real saver but not the harness** → almost always the shader. The
+   host is sandboxed with Mach lookup exceptions for `CARenderServer` and `CoreDisplay` but
+   **not** `MTLCompilerService`, so `makeLibrary(source:)` cannot work there at all. Confirm
+   the log shows `loaded precompiled metallib` and not `compiled from inline source`. Do not
+   reorder the loader back to source-first: it fails silently and presents as black.
 2. **Saver missing from System Settings** → bad `Info.plist`. `CFBundlePackageType` must be
    `BNDL` and `NSPrincipalClass` must match the `@objc(...)` name exactly. Confirm with
    `defaults read <bundle>/Contents/Info NSPrincipalClass`.

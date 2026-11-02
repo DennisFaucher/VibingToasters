@@ -39,6 +39,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
     private var lastTime: CFTimeInterval = CACurrentMediaTime()
     private var elapsed: Float = 0
     private var frameCount = 0
+    private var drawAttempts = 0
     private var viewportSize = SIMD2<Float>(1280, 800)
     private var aspect: Float = 1.6
 
@@ -62,7 +63,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
                                count: (toasts + toasters + stars + 8) * Wire.floatsPerInstance)
 
         guard let queue = device.makeCommandQueue() else {
-            NSLog("[FlyingToasters] Unable to create a Metal command queue")
+            Diagnostics.log("Unable to create a Metal command queue")
             return nil
         }
         self.device = device
@@ -72,13 +73,13 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         do {
             library = try Self.makeShaderLibrary(device: device)
         } catch {
-            NSLog("[FlyingToasters] Shader compilation failed: \(error)")
+            Diagnostics.log("Shader compilation failed: \(error)")
             return nil
         }
 
         guard let vertexFunction = library.makeFunction(name: "vertex_main"),
               let fragmentFunction = library.makeFunction(name: "fragment_main") else {
-            NSLog("[FlyingToasters] Shader entry points are missing")
+            Diagnostics.log("Shader entry points are missing")
             return nil
         }
 
@@ -103,14 +104,14 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         do {
             self.pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
-            NSLog("[FlyingToasters] Pipeline creation failed: \(error)")
+            Diagnostics.log("Pipeline creation failed: \(error)")
             return nil
         }
 
         let instanceBytes = instanceCapacity * Wire.bytesPerInstance
         guard let instances = device.makeBuffer(length: instanceBytes, options: .storageModeShared),
               let uniforms = device.makeBuffer(length: 16, options: .storageModeShared) else {
-            NSLog("[FlyingToasters] Unable to allocate Metal buffers")
+            Diagnostics.log("Unable to allocate Metal buffers")
             return nil
         }
         instances.label = "Instances"
@@ -119,7 +120,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         self.frameUniforms = uniforms
 
         guard let frames = Self.makeToasterTexture(device: device, queue: queue) else {
-            NSLog("[FlyingToasters] Unable to build the toaster frame texture")
+            Diagnostics.log("Unable to build the toaster frame texture")
             return nil
         }
         self.toasterTexture = frames
@@ -130,27 +131,51 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
                "Instance wire format drifted: \(Wire.bytesPerInstance) bytes, shader expects 64")
 
         buildPopulation()
-        NSLog("[FlyingToasters] Ready: \(starCount) stars, \(toastCount) toasts, \(toasterCount) toasters on \(device.name)")
+        Diagnostics.log("Ready: \(starCount) stars, \(toastCount) toasts, \(toasterCount) toasters on \(device.name)")
     }
 
-    /// Compiles the inlined shader source, falling back to a precompiled metallib.
-    ///
-    /// The screen saver is loaded inside Apple's sandboxed `legacyScreenSaver`
-    /// host, where the XPC round-trip to the Metal compiler service is not
-    /// guaranteed. Building the `.metallib` at bundle-assembly time and shipping it
-    /// in `Contents/Resources` sidesteps that entirely.
-    private static func makeShaderLibrary(device: MTLDevice) throws -> MTLLibrary {
-        do {
-            return try device.makeLibrary(source: metalShaderSource, options: nil)
-        } catch {
-            NSLog("[FlyingToasters] Runtime shader compilation failed (\(error)); trying bundled metallib")
-            let bundle = Bundle(for: FlyingToastersRenderer.self)
-            guard let url = bundle.url(forResource: "FlyingToastersShaders",
-                                       withExtension: "metallib") else {
-                throw error
-            }
-            return try device.makeLibrary(URL: url)
+    /// Resolves the precompiled `Contents/Resources/FlyingToastersShaders.metallib`,
+    /// if one shipped alongside this code.
+    private static func bundledMetallibURL() -> URL? {
+        // Usual case: NSBundle resolves the bundle that contains this class.
+        if let url = Bundle(for: FlyingToastersRenderer.self)
+            .url(forResource: "FlyingToastersShaders", withExtension: "metallib") {
+            return url
         }
+
+        // Inside `legacyScreenSaver` the dylib is hosted by another bundle, so
+        // `Bundle(for:)` can resolve to the host's bundle instead of the `.saver`.
+        // Derive the path from this image directly: <bundle>/Contents/MacOS/<exe>.
+        var info = Dl_info()
+        guard dladdr(#dsohandle, &info) != 0, let name = info.dli_fname else { return nil }
+        let exe = URL(fileURLWithPath: String(cString: name))
+        let contents = exe.deletingLastPathComponent().deletingLastPathComponent()
+        let candidate = contents.appendingPathComponent("Resources/FlyingToastersShaders.metallib")
+        return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+    }
+
+    /// Builds the shader library, preferring the precompiled metallib.
+    ///
+    /// Order matters. The screen saver is loaded inside a sandboxed host with no
+    /// Mach-lookup exception for `MTLCompilerService`, so `makeLibrary(source:)`
+    /// cannot compile there — and probing it first risks a long XPC timeout before
+    /// the fallback is ever reached. So: a bundled metallib wins whenever present,
+    /// and runtime compilation is only for the standalone app, which has none.
+    private static func makeShaderLibrary(device: MTLDevice) throws -> MTLLibrary {
+        if let url = bundledMetallibURL() {
+            do {
+                let library = try device.makeLibrary(URL: url)
+                Diagnostics.log("shader: loaded precompiled metallib at \(url.path)")
+                return library
+            } catch {
+                Diagnostics.log("shader: bundled metallib failed to load (\(error)); falling back to source")
+            }
+        } else {
+            Diagnostics.log("shader: no bundled metallib; compiling from source")
+        }
+        let library = try device.makeLibrary(source: metalShaderSource, options: nil)
+        Diagnostics.log("shader: compiled from inline source")
+        return library
     }
 
     /// Expands the packed 4-bit frames into an RGBA8 texture array and builds the
@@ -165,7 +190,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         guard let packed = Data(base64Encoded: ToasterFrames.packedBase64,
                                 options: .ignoreUnknownCharacters),
               packed.count == count * pixelsPerFrame / 2 else {
-            NSLog("[FlyingToasters] Toaster frame pack is the wrong size")
+            Diagnostics.log("Toaster frame pack is the wrong size")
             return nil
         }
 
@@ -252,6 +277,12 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
     }
 
     public func draw(in view: MTKView) {
+        drawAttempts += 1
+        if drawAttempts <= 3 {
+            Diagnostics.log("draw #\(drawAttempts): drawableSize=\(view.drawableSize) "
+                            + "bounds=\(view.bounds.size) paused=\(view.isPaused)")
+        }
+
         let now = CACurrentMediaTime()
         let dt = Float(min(now - lastTime, 0.05))
         lastTime = now
@@ -263,6 +294,9 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let descriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable else {
+            if drawAttempts <= 3 {
+                Diagnostics.log("draw #\(drawAttempts): no command buffer, pass descriptor or drawable")
+            }
             return
         }
 
@@ -293,7 +327,7 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
 
         frameCount += 1
         if frameCount == 60 {
-            NSLog("[FlyingToasters] Animation confirmed: 60 frames rendered")
+            Diagnostics.log("Animation confirmed: 60 frames rendered")
         }
     }
 
