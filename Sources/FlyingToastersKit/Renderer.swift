@@ -332,10 +332,18 @@ public final class FlyingToastersRenderer: NSObject, MTKViewDelegate {
         // that nobody can see.
         switch frameCount {
         case 60, 600, 1800:
+            let w = view.window
+            let content = w?.contentView
+            let inTree = content.map { view.isDescendant(of: $0) } ?? false
+            let layer = view.layer
             Diagnostics.log("Animation heartbeat: \(frameCount) frames, "
-                            + "elapsed=\(String(format: "%.1f", elapsed))s, "
-                            + "window=\(view.window != nil), "
-                            + "visible=\(!view.isHidden && view.alphaValue > 0)")
+                            + "win=\(w != nil) winNum=\(w?.windowNumber ?? -1) "
+                            + "winVisible=\(w?.isVisible ?? false) "
+                            + "inContentViewTree=\(inTree) "
+                            + "layerSuper=\(layer?.superlayer != nil) "
+                            + "layerBounds=\(layer?.bounds.size ?? .zero) "
+                            + "appWindows=\(NSApp.windows.count) "
+                            + "ourWindowIndex=\(w.flatMap { NSApp.windows.firstIndex(of: $0) } ?? -1)")
         default:
             break
         }

@@ -54,12 +54,25 @@ public final class ToasterView: MTKView {
         Diagnostics.log("view: stopAnimating")
     }
 
+    /// Called when the view is detached from its window, i.e. the session ended.
+    public var onLeaveWindow: (() -> Void)?
+
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         isPaused = !(wantsAnimation && window != nil)
         Diagnostics.log("view: viewDidMoveToWindow window=\(window != nil) "
                         + "paused=\(isPaused) bounds=\(bounds.size) "
+                        + "superview=\(superview.map { String(describing: type(of: $0)) } ?? "nil") "
                         + "layer=\(layer.map { String(describing: type(of: $0)) } ?? "nil")")
+        if window == nil {
+            onLeaveWindow?()
+        }
+    }
+
+    public override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        Diagnostics.log("view: viewDidMoveToSuperview superview="
+                        + "\(superview.map { String(describing: type(of: $0)) } ?? "nil")")
     }
 
     public override func keyDown(with event: NSEvent) {
