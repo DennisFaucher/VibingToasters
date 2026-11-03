@@ -21,16 +21,31 @@ public enum Diagnostics {
 
     private static var didResetThisProcess = false
 
-    /// Truncates the log once per process.
+    /// Marks the start of a new host process in the log.
     ///
-    /// Not once per instance: the host creates one screen saver view per display,
-    /// and resetting each time would leave only the last display's history — which
-    /// is exactly the wrong thing to hide when one screen is black and another is
-    /// fine.
+    /// The log is appended to across processes, not truncated: the saver now
+    /// exits its host after every session, so truncating per process would
+    /// erase the previous (possibly black) run before anyone could read it. The
+    /// file is only trimmed once it grows past a size cap.
     public static func reset() {
         guard !didResetThisProcess else { return }
         didResetThisProcess = true
-        try? FileManager.default.removeItem(at: logURL)
+        let size = (try? FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? Int) ?? 0
+        if size > 256_000 { try? FileManager.default.removeItem(at: logURL) }
+        log("===== host process start pid=\(ProcessInfo.processInfo.processIdentifier) "
+            + "age=\(processAge().map { String(format: "%.1fs", $0) } ?? "?") =====")
+    }
+
+    /// Seconds since this process was launched. The host is respawned by the
+    /// system right after it exits, long before the next trigger builds a view,
+    /// so "first log line" is not the launch time; this is.
+    public static func processAge() -> TimeInterval? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, ProcessInfo.processInfo.processIdentifier]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return nil }
+        let t = info.kp_proc.p_un.__p_starttime
+        return Date().timeIntervalSince1970 - (Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000)
     }
 
     public static func log(_ message: String) {

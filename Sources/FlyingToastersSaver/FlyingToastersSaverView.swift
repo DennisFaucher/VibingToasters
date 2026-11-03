@@ -27,6 +27,14 @@ public final class FlyingToastersSaverView: ScreenSaverView {
     private static var latestInstance = 0
     private var instanceNumber = 0
 
+    /// Observer for the host's "saver is being dismissed" broadcast.
+    private static var willStopObserver: NSObjectProtocol?
+
+    /// True once this process has begun animating a session. A `willstop` that
+    /// arrives before that is stale (left over from the previous dismissal) and
+    /// must not take down a host that is still starting up.
+    private static var sessionStarted = false
+
     deinit {
         Self.liveInstances -= 1
         Diagnostics.log("saver: deinit, live instances now \(Self.liveInstances)")
@@ -48,7 +56,9 @@ public final class FlyingToastersSaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
-        Diagnostics.log("saver: startAnimation window=\(window != nil) bounds=\(bounds.size)")
+        Self.sessionStarted = true
+        Diagnostics.log("saver: startAnimation window=\(window != nil) bounds=\(bounds.size) "
+                        + "age=\(Diagnostics.processAge().map { String(format: "%.1fs", $0) } ?? "?")")
         metalView?.startAnimating()
     }
 
@@ -75,6 +85,8 @@ public final class FlyingToastersSaverView: ScreenSaverView {
                         + "liveInstances=\(Self.liveInstances) instance=\(instanceNumber)")
 
         wantsLayer = true
+
+        if !isPreview { Self.installWillStopExit() }
 
         // Sizes are in normalised device coordinates, so the composition is the
         // same at any view size and the preview tile does not need rescaling.
@@ -110,6 +122,31 @@ public final class FlyingToastersSaverView: ScreenSaverView {
 
         self.renderer = renderer
         self.metalView = view
+    }
+
+    /// Exits the host when the user dismisses the saver.
+    ///
+    /// The host does not reliably call `stopAnimation()` or detach the view from
+    /// its window at dismissal (it does so lazily on the *next* trigger, which is
+    /// too late), so the view-based hook below never fires between sessions. The
+    /// `com.apple.screensaver.willstop` distributed notification is posted on
+    /// every dismissal, so it is the dependable end-of-session signal.
+    private static func installWillStopExit() {
+        guard willStopObserver == nil else { return }
+        willStopObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screensaver.willstop"),
+            object: nil, queue: .main
+        ) { _ in
+            guard sessionStarted else {
+                Diagnostics.log("saver: willstop received before startAnimation; "
+                                + "stale, ignoring")
+                return
+            }
+            Diagnostics.log("saver: willstop received, exiting host process "
+                            + "so the next run starts clean")
+            // Brief delay so the log line and the dismissal animation finish.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+        }
     }
 
     /// Lets a finished session take the host process with it.
