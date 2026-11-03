@@ -45,13 +45,37 @@ precompiled `metallib` lives in `Contents/Resources` and is loaded directly (not
 | `Sources/FlyingToastersKit/ToasterView.swift` | Shared `MTKView` setup (display link pushed hard) |
 | `Sources/FlyingToastersKit/ToasterFrames.swift` | Generated. Six 64×64 toaster frames, 4 bits per pixel |
 | `Sources/FlyingToastersKit/Diagnostics.swift` | File log for the sandboxed saver, where unified logging is unreachable |
-| `Sources/FlyingToasters/main.swift` | App front end: window, key handling |
+| `Sources/FlyingToasters/main.swift` | App front end: launch modes (`agent`, `--saver`, `--window`), window mode |
+| `Sources/FlyingToasters/SaverSession.swift` | Full-screen run: one screen-saver-level window per display, dismissed by input |
+| `Sources/FlyingToasters/HotCorner.swift` | Polls the pointer; fires when it rests in the top-right corner |
+| `Tools/install-agent.sh` | Installs the app as a LaunchAgent and disables the system top-right hot corner (`--uninstall` reverts) |
 | `Sources/FlyingToastersSaver/FlyingToastersSaverView.swift` | `ScreenSaverView` plugin |
 | `Tools/make-saver.sh` | Builds, compiles the metallib, assembles and signs the `.saver` |
 | `Tools/BakeToasterFrames.py` | Regenerates `ToasterFrames.swift` from the XPM sprites |
 | `Tools/TestSaver.swift` | Loads a `.saver` via `NSBundle` and hosts it in a window |
 | `Tools/winlist.swift` | Prints a window's CGWindowID, for screenshot capture |
 | `AGENTS.md` | This file |
+
+## The app as the real "screen saver" (preferred on macOS 26)
+
+On macOS 26 the `.saver` is unreliable no matter what we do: `legacyScreenSaver` shows
+black on a large fraction of runs, and nothing in our process differs between a good run
+and a black one (frames drawn, window visible, level, occlusion, host age all identical).
+It is an OS bug (Apple forum thread 787444; FB19204084, FB19206021, FB17938870). The
+`willstop` exit in `FlyingToastersSaverView` is the community workaround and only reduces it.
+So the standalone app is the dependable route:
+
+- `FlyingToasters` with no flags is a background agent (`.accessory`, 🍞 menu-bar item).
+  `HotCornerMonitor` polls `NSEvent.mouseLocation` (no permissions needed) and starts a
+  `SaverSession` when the pointer rests in the top-right corner for 0.25 s. It re-arms only
+  after the pointer leaves the corner.
+- `SaverSession` opens a borderless `.screenSaver`-level window on every display, hides
+  the cursor, and ends on key, click, scroll, or pointer movement > 30 pt (ignored for the
+  first 0.8 s so the launching gesture cannot dismiss it). A display-count change also ends it.
+- `FlyingToasters --saver` runs one session and quits; `--window` is the original window.
+- It is not a system screen saver: no lock, no idle timer, absent from System Settings.
+  Run `Tools/install-agent.sh` to start it at login and turn off the system top-right
+  corner; `--uninstall` restores that corner to "Start Screen Saver" (value 5).
 
 ## Sprite provenance
 
@@ -178,6 +202,10 @@ nothing useful:
 cat ~/Library/Containers/com.apple.ScreenSaver.Engine.legacyScreenSaver/Data/tmp/FlyingToastersSaver.log
 ```
 
+The log is **appended across host processes** (each starts with `===== host process start
+pid=… age=… =====`), because the saver exits its host after every session; it is only trimmed
+past 256 KB. Delete the file to start a clean capture.
+
 A healthy run looks like this — note the metallib path, which is the only shader route that
 works under that sandbox:
 
@@ -203,7 +231,15 @@ Failure modes worth knowing:
    `defaults read <bundle>/Contents/Info NSPrincipalClass`.
 3. **Bundle refuses to load on Apple Silicon** → unsigned. Every Mach-O must carry at least
    an ad-hoc signature; `make-saver.sh` signs the dylib and then the bundle.
-4. **`legacyScreenSaver` pegged at 100% CPU after the saver is dismissed** → a known macOS
+4. **Intermittent black screen, log looks perfect** → the macOS 26 host bug described in "The
+   app as the real screen saver". Frames are drawn, the window reports visible, and there is
+   nothing to find in-process. `FlyingToastersSaverView` exits the host on the
+   `com.apple.screensaver.willstop` distributed notification, which reduces it but does not
+   remove it. Two traps in that workaround: the host does **not** reliably call
+   `stopAnimation()` or detach the view at dismissal, so only `willstop` works as an
+   end-of-session signal; and a stale `willstop` can arrive before `startAnimation()`, so it
+   must be ignored until the session has started or it kills a host mid-launch.
+5. **`legacyScreenSaver` pegged at 100% CPU after the saver is dismissed** → a known macOS
    Tahoe-and-later regression in Apple's host, not this code. `killall legacyScreenSaver`.
 
 ## Conventions
